@@ -6,76 +6,157 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { ChatMessage, Lobby, Player } from "@/types";
-import { Crown, Gamepad2, MessageSquare, Send, UserPlus, Users, Mic, MicOff, Settings2, DoorOpen } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { ChatMessage, Lobby, Player, NakamaChannelMessage } from "@/types";
+import { Crown, Gamepad2, MessageSquare, Send, UserPlus, Users, Mic, MicOff, Settings2, DoorOpen, AlertTriangle, Loader2 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import React, { useState, useEffect, useRef } from "react";
+import { getLobbyDetails as fetchNakamaLobbyDetails, joinChatChannel, sendChatMessage, onChatMessage, getCurrentNakamaSession, getAccountDetails, logout } from "@/lib/nakama-client";
+import { useToast } from "@/hooks/use-toast";
 
-const mockLobby: Lobby = {
-  id: "lobby1",
-  name: "CS:GO Competitive Grind",
-  playerCount: 8,
-  maxPlayers: 10,
-  isPublic: true,
-  game: "CS:GO",
-};
-
-const mockPlayers: Player[] = [
-  { id: "p1", name: "HostPlayer", avatarUrl: "https://picsum.photos/seed/host/40/40", elo: 1900, kdRatio: 1.8, wins: 150 },
-  { id: "p2", name: "GamerGirl99", avatarUrl: "https://picsum.photos/seed/player2/40/40", elo: 1750, kdRatio: 1.5, wins: 120 },
-  { id: "p3", name: "NoScopeKing", avatarUrl: "https://picsum.photos/seed/player3/40/40", elo: 2100, kdRatio: 2.1, wins: 200 },
-  { id: "p4", name: "TacticalTurtle", avatarUrl: "https://picsum.photos/seed/player4/40/40", elo: 1600, kdRatio: 1.2, wins: 90 },
-];
-
-const initialMessages: ChatMessage[] = [
-  { id: "msg1", sender: mockPlayers[1], content: "Hey everyone! Ready to win?", timestamp: new Date(Date.now() - 60000 * 5), channelId: "lobby1" },
-  { id: "msg2", sender: mockPlayers[0], content: "Welcome! Let's get this bread.", timestamp: new Date(Date.now() - 60000 * 4), channelId: "lobby1" },
-  { id: "msg3", sender: mockPlayers[2], content: "I'm feeling some headshots today.", timestamp: new Date(Date.now() - 60000 * 3), channelId: "lobby1" },
-];
 
 export default function LobbyPage() {
   const params = useParams();
+  const router = useRouter();
+  const { toast } = useToast();
   const lobbyId = params.lobbyId as string;
 
-  // In a real app, fetch lobby data and players based on lobbyId
-  const lobby = mockLobby; // Using mock for now
-  const [players, setPlayers] = useState(mockPlayers);
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+  const [lobby, setLobby] = useState<(Lobby & { players: Player[] }) | null>(null);
+  const [currentUser, setCurrentUser] = useState<Player | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const session = getCurrentNakamaSession();
+    if (!session || !lobbyId) {
+      router.push("/");
+      return;
+    }
+
+    async function loadLobbyData() {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const [lobbyDetails, userDetails] = await Promise.all([
+          fetchNakamaLobbyDetails(lobbyId),
+          getAccountDetails()
+        ]);
+        setLobby(lobbyDetails);
+        setCurrentUser(userDetails);
+
+        // Join chat channel for this lobby
+        // Channel ID could be the lobbyId itself or a dedicated chat channel ID associated with the lobby
+        const chatChannelId = `lobby_${lobbyId}`; // Example convention
+        await joinChatChannel(chatChannelId, 1 /* ROOM type */);
+        
+        // Set up listener for new messages
+        onChatMessage((chatMsg) => {
+          if (chatMsg.channelId === chatChannelId) {
+            setMessages((prevMessages) => [...prevMessages, chatMsg]);
+          }
+        });
+
+      } catch (err: any) {
+        console.error("Failed to load lobby data:", err);
+        setError(err.message || "Failed to load lobby.");
+        if (err.message.includes("Session expired") || err.message.includes("Not authenticated")) {
+            await logout();
+            router.push("/");
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadLobbyData();
+  }, [lobbyId, router]);
 
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newMessage.trim() === "") return;
+    if (newMessage.trim() === "" || !currentUser || !lobby) return;
 
-    const myPlayer = mockPlayers[0]; // Assume current user is the host for mock
-    const message: ChatMessage = {
-      id: `msg${messages.length + 1}`,
-      sender: myPlayer,
-      content: newMessage,
-      timestamp: new Date(),
-      channelId: lobbyId,
-    };
-    setMessages([...messages, message]);
-    setNewMessage("");
+    const chatChannelId = `lobby_${lobbyId}`;
+    try {
+      // The sendChatMessage in nakama-client will handle creating the NakamaChannelMessage
+      // For optimistic update, we can add it to local state immediately
+      const optimisticMessage: ChatMessage = {
+        id: `temp-${Date.now()}`,
+        sender: { 
+            id: currentUser.id, 
+            username: currentUser.username, 
+            displayName: currentUser.displayName,
+            avatarUrl: currentUser.avatarUrl
+        },
+        content: newMessage,
+        timestamp: new Date(),
+        channelId: chatChannelId,
+      };
+      setMessages(prev => [...prev, optimisticMessage]);
+      setNewMessage("");
+      
+      await sendChatMessage(chatChannelId, newMessage);
+      // If the server sends back the message via the onChatMessage listener,
+      // we might get duplicates or need to reconcile temp messages.
+      // For simplicity, Nakama's socket.writeChatMessage usually also broadcasts
+      // back to the sender if they are subscribed.
+    } catch (err: any) {
+      console.error("Failed to send message:", err);
+      toast({ variant: "destructive", title: "Send Failed", description: "Could not send message." });
+      // Remove optimistic message on failure if desired
+      setMessages(prev => prev.filter(m => m.id !== optimisticMessage.id));
+    }
   };
 
-  if (!lobby) {
+
+  if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground">
-        Lobby not found.
+      <div className="container mx-auto py-8">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="lg:col-span-1 space-y-6">
+            <Card className="shadow-lg">
+              <CardHeader><Skeleton className="h-8 w-3/4 mb-1" /><Skeleton className="h-4 w-1/2" /></CardHeader>
+              <CardContent>
+                <Skeleton className="h-6 w-1/3 mb-4" />
+                <div className="h-[200px] space-y-3 pr-3">
+                  {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+                </div>
+              </CardContent>
+              <CardFooter><Skeleton className="h-10 w-full" /></CardFooter>
+            </Card>
+          </div>
+          <Card className="lg:col-span-2 shadow-lg flex flex-col">
+            <CardHeader><Skeleton className="h-8 w-1/2" /></CardHeader>
+            <CardContent className="flex-grow flex flex-col overflow-hidden p-0">
+              <div className="flex-grow p-6 space-y-4"><Skeleton className="h-40 w-full" /></div>
+              <div className="border-t p-4 bg-card"><Skeleton className="h-10 w-full" /></div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }
 
+  if (error || !lobby || !currentUser) {
+    return (
+      <div className="container mx-auto py-8 text-center text-destructive">
+        <AlertTriangle className="h-12 w-12 mx-auto mb-4" />
+        <p className="text-xl">Error loading lobby</p>
+        <p>{error || "Lobby or user data not found."}</p>
+         <Button onClick={() => router.push("/lobbies")} className="mt-4">Back to Lobbies</Button>
+      </div>
+    );
+  }
+  
   return (
     <div className="container mx-auto py-8">
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -98,16 +179,16 @@ export default function LobbyPage() {
               </div>
               <ScrollArea className="h-[200px] pr-3">
                 <ul className="space-y-3">
-                  {players.map((player, index) => (
+                  {lobby.players.map((player) => (
                     <li key={player.id} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors">
                       <div className="flex items-center gap-3">
                         <Avatar className="h-9 w-9">
-                          <AvatarImage src={player.avatarUrl} alt={player.name} data-ai-hint="player avatar small" />
-                          <AvatarFallback>{player.name.charAt(0)}</AvatarFallback>
+                          <AvatarImage src={player.avatarUrl || `https://picsum.photos/seed/${player.id}/40/40`} alt={player.displayName || player.username} data-ai-hint="player avatar small" />
+                          <AvatarFallback>{(player.displayName || player.username).charAt(0)}</AvatarFallback>
                         </Avatar>
-                        <span className="font-medium text-sm">{player.name}</span>
+                        <span className="font-medium text-sm">{player.displayName || player.username}</span>
                       </div>
-                      {index === 0 && <Crown className="h-5 w-5 text-yellow-500" title="Host" />}
+                      {player.id === lobby.hostId && <Crown className="h-5 w-5 text-yellow-500" title="Host" />}
                     </li>
                   ))}
                 </ul>
@@ -129,7 +210,7 @@ export default function LobbyPage() {
         </div>
 
         {/* Chat System */}
-        <Card className="lg:col-span-2 shadow-lg flex flex-col">
+        <Card className="lg:col-span-2 shadow-lg flex flex-col h-[calc(100vh-12rem)]"> {/* Adjusted height */}
           <CardHeader>
             <CardTitle className="text-xl flex items-center">
               <MessageSquare className="mr-3 h-6 w-6 text-primary" /> Lobby Chat
@@ -139,32 +220,38 @@ export default function LobbyPage() {
             <ScrollArea className="flex-grow p-6">
               <div className="space-y-4">
                 {messages.map((msg) => (
-                  <div key={msg.id} className={`flex items-start gap-3 ${msg.sender.id === mockPlayers[0].id ? "justify-end" : ""}`}>
-                    {msg.sender.id !== mockPlayers[0].id && (
+                  <div key={msg.id} className={`flex items-start gap-3 ${msg.sender.id === currentUser.id ? "justify-end" : ""}`}>
+                    {msg.sender.id !== currentUser.id && (
                       <Avatar className="h-8 w-8 shrink-0">
-                        <AvatarImage src={msg.sender.avatarUrl} alt={msg.sender.name} data-ai-hint="chat avatar"/>
-                        <AvatarFallback>{msg.sender.name.charAt(0)}</AvatarFallback>
+                        <AvatarImage src={msg.sender.avatarUrl || `https://picsum.photos/seed/${msg.sender.id}/40/40`} alt={msg.sender.displayName || msg.sender.username} data-ai-hint="chat avatar"/>
+                        <AvatarFallback>{(msg.sender.displayName || msg.sender.username).charAt(0)}</AvatarFallback>
                       </Avatar>
                     )}
-                    <div className={`p-3 rounded-xl max-w-[70%] ${msg.sender.id === mockPlayers[0].id ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+                    <div className={`p-3 rounded-xl max-w-[70%] ${msg.sender.id === currentUser.id ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
                       <p className="text-xs font-semibold mb-0.5">
-                        {msg.sender.id === mockPlayers[0].id ? "You" : msg.sender.name}
+                        {msg.sender.id === currentUser.id ? "You" : (msg.sender.displayName || msg.sender.username)}
                       </p>
-                      <p className="text-sm">{msg.content}</p>
+                      <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
                       <p className="text-xs opacity-70 mt-1 text-right">
-                        {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>
-                     {msg.sender.id === mockPlayers[0].id && (
+                     {msg.sender.id === currentUser.id && (
                       <Avatar className="h-8 w-8 shrink-0">
-                        <AvatarImage src={msg.sender.avatarUrl} alt={msg.sender.name} data-ai-hint="chat avatar" />
-                        <AvatarFallback>{msg.sender.name.charAt(0)}</AvatarFallback>
+                        <AvatarImage src={currentUser.avatarUrl || `https://picsum.photos/seed/${currentUser.id}/40/40`} alt={currentUser.displayName || currentUser.username} data-ai-hint="chat avatar" />
+                        <AvatarFallback>{(currentUser.displayName || currentUser.username).charAt(0)}</AvatarFallback>
                       </Avatar>
                     )}
                   </div>
                 ))}
                 <div ref={chatEndRef} />
               </div>
+               {messages.length === 0 && (
+                <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                    <MessageSquare className="h-12 w-12 mb-4" />
+                    <p>No messages yet. Say hello!</p>
+                </div>
+                )}
             </ScrollArea>
             <form onSubmit={handleSendMessage} className="border-t p-4 bg-card">
               <div className="flex items-center gap-2">
@@ -186,3 +273,4 @@ export default function LobbyPage() {
     </div>
   );
 }
+
