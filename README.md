@@ -1,3 +1,23 @@
+# 🚧 Gamer Collaboration Platform (Self-Hosted) – Work in Progress
+
+⚠️ **This project is currently under development and not functional yet.**  
+Contributions and feedback are welcome, but please note that many features are incomplete.
+
+<p align="center">
+  <img src="https://github.com/vaheed/GamerHub/blob/master/docs/gamerhub.png" alt="GamerHub Screenshot" width="600">
+</p>
+
+## 🎯 Overview
+
+**GamerHub** is a self-hosted web platform designed for gamers to:
+
+- 🎮 Manage game-specific teams
+- 🧑‍🤝‍🧑 Match and collaborate with other players
+- 💬 Communicate via integrated chat and voice tools
+
+The platform is tailored for popular titles like **CS:GO**, **Dota 2**, and **League of Legends**.
+
+
 # GamerHub
 
 GamerHub is a platform designed to be your central hub for gaming, integrating features like Steam/System ID login, lobbies, player dashboards, AI-powered match summaries, chat, game integration, and leaderboards, all powered by Nakama as the backend.
