@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Client, Session as NakamaJsSession } from "@heroiclabs/nakama-js";
@@ -67,19 +68,6 @@ function clearSession() {
   currentSession = null;
   if (nakamaClientInstance) {
     nakamaClientInstance.session = undefined;
-  }
-}
-
-export async function authenticateEmail(email: string, password?: string, create: boolean = true): Promise<NakamaSession> {
-  const client = getNakamaClient();
-  try {
-    const session = await client.authenticateEmail(email, password || "password", create); // Use a default for mock if no password
-    storeSession(session as NakamaSession);
-    console.log("Nakama: Authenticated via Email for user:", session.username);
-    return session as NakamaSession;
-  } catch (error) {
-    console.error("Nakama: Email authentication failed:", error);
-    throw error;
   }
 }
 
@@ -401,3 +389,4 @@ export async function listLeaderboardRecords(leaderboardId: string, limit: numbe
 if (typeof window !== 'undefined') {
     getNakamaClient(); // This will also trigger restoreSession logic inside if applicable
 }
+

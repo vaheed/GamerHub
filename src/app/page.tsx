@@ -1,15 +1,14 @@
+
 "use client";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Fingerprint, LogIn, AlertTriangle } from "lucide-react";
+import { Fingerprint, AlertTriangle, LogIn } from "lucide-react";
 import Link from "next/link";
 import { Logo } from "@/components/logo";
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { authenticateEmail, authenticateDevice } from "@/lib/nakama-client"; // Assuming device auth for Steam for now
+import { authenticateDevice } from "@/lib/nakama-client"; 
 
 // Steam icon SVG
 const SteamIcon = () => (
@@ -22,47 +21,52 @@ const SteamIcon = () => (
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadingMethod, setLoadingMethod] = useState<"system" | "steam" | null>(null);
 
-  const handleLogin = async (event: React.FormEvent) => {
-    event.preventDefault();
+
+  const handleSystemIdLogin = async () => {
     setIsLoading(true);
+    setLoadingMethod("system");
     setError(null);
     try {
-      // Using email for "System ID / Email" field
-      await authenticateEmail(email, password, true); // true to create user if not exists
-      router.push("/dashboard");
-    } catch (err: any) {
-      console.error("Login failed:", err);
-      setError(err.message || "Login failed. Please check your credentials.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSteamLogin = async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      // For a real Steam login, you'd get a Steam auth token from the Steam client/SDK
-      // and pass it to Nakama's authenticateSteam method.
-      // For this example, we'll use device ID auth as a placeholder.
-      // A unique device ID should be generated and stored consistently.
       let deviceId = localStorage.getItem("gamerhub_device_id");
       if (!deviceId) {
         deviceId = crypto.randomUUID();
         localStorage.setItem("gamerhub_device_id", deviceId);
       }
-      await authenticateDevice(deviceId, true, `SteamUser_${deviceId.substring(0,6)}`);
+      await authenticateDevice(deviceId, true, `User_${deviceId.substring(0, 8)}`);
+      router.push("/dashboard");
+    } catch (err: any) {
+      console.error("System ID login failed:", err);
+      setError(err.message || "System ID login failed.");
+    } finally {
+      setIsLoading(false);
+      setLoadingMethod(null);
+    }
+  };
+
+  const handleSteamLogin = async () => {
+    setIsLoading(true);
+    setLoadingMethod("steam");
+    setError(null);
+    try {
+      let deviceId = localStorage.getItem("gamerhub_device_id"); // Use the same device ID concept
+      if (!deviceId) {
+        deviceId = crypto.randomUUID();
+        localStorage.setItem("gamerhub_device_id", deviceId);
+      }
+      // In a real scenario, Steam token would be used for Nakama's authenticateSteam.
+      // Here, we simulate it using device auth with a different username.
+      await authenticateDevice(deviceId, true, `SteamUser_${deviceId.substring(0, 8)}`);
       router.push("/dashboard");
     } catch (err: any) {
       console.error("Steam login placeholder failed:", err);
       setError(err.message || "Steam login failed.");
     } finally {
       setIsLoading(false);
+      setLoadingMethod(null);
     }
   };
 
@@ -76,63 +80,47 @@ export default function LoginPage() {
           <CardTitle className="text-3xl font-bold">Welcome to GamerHub</CardTitle>
           <CardDescription>Sign in to access your gaming world.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">System ID / Email</Label>
-              <Input 
-                id="email" 
-                type="email" 
-                placeholder="Enter your ID or email" 
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                disabled={isLoading}
-              />
+        <CardContent className="space-y-4">
+          {error && (
+            <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md flex items-center">
+              <AlertTriangle className="h-4 w-4 mr-2" />
+              {error}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input 
-                id="password" 
-                type="password" 
-                placeholder="Enter your password" 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                disabled={isLoading}
-              />
-            </div>
-            {error && (
-              <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md flex items-center">
-                <AlertTriangle className="h-4 w-4 mr-2" />
-                {error}
-              </div>
-            )}
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading && email ? <LogIn className="mr-2 h-5 w-5 animate-spin" /> : <LogIn className="mr-2 h-5 w-5" />}
-              Login with System ID
-            </Button>
-          </form>
+          )}
+          <Button 
+            className="w-full" 
+            onClick={handleSystemIdLogin} 
+            disabled={isLoading}
+          >
+            {isLoading && loadingMethod === 'system' ? <LogIn className="mr-2 h-5 w-5 animate-spin" /> : <Fingerprint className="mr-2 h-5 w-5" />}
+            Login with System ID
+          </Button>
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
               <span className="w-full border-t" />
             </div>
             <div className="relative flex justify-center text-xs uppercase">
               <span className="bg-card px-2 text-muted-foreground">
-                Or continue with
+                Or
               </span>
             </div>
           </div>
-          <Button variant="outline" className="w-full" onClick={handleSteamLogin} disabled={isLoading}>
-            {isLoading && !email ? <SteamIcon /> : <SteamIcon /> }
+          <Button 
+            variant="outline" 
+            className="w-full" 
+            onClick={handleSteamLogin} 
+            disabled={isLoading}
+          >
+            {isLoading && loadingMethod === 'steam' ? <SteamIcon /> : <SteamIcon />}
             <span className="ml-2">Login with Steam</span>
           </Button>
         </CardContent>
         <CardFooter className="flex flex-col items-center text-sm">
-          <p className="text-muted-foreground">
-            Don&apos;t have an account? <Link href="#" className="font-medium text-primary hover:underline">Sign up</Link>
+          <p className="mt-4 text-xs text-muted-foreground text-center">
+            System ID login creates an account based on your device. <br />
+            Steam login will use your Steam identity (simulated for this demo).
           </p>
-          <p className="mt-4 text-xs text-muted-foreground">
+           <p className="mt-2 text-xs text-muted-foreground">
             By signing in, you agree to our Terms of Service.
           </p>
         </CardFooter>
