@@ -18,6 +18,11 @@ export function Header() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<Player | null>(null);
   const [isLoadingUser, setIsLoadingUser] = useState(true);
+  const [hasMounted, setHasMounted] = useState(false);
+
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
 
   useEffect(() => {
     const session = getCurrentNakamaSession();
@@ -45,8 +50,13 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background/80 px-4 backdrop-blur-md sm:px-6">
-      {isMobile && <SidebarTrigger />}
-      {!isMobile && <div className="w-[52px]"></div>} {/* Placeholder for sidebar trigger space */}
+      {hasMounted ? (
+        isMobile ? <SidebarTrigger /> : <div className="w-[52px]"></div> /* Placeholder for sidebar trigger space */
+      ) : (
+        // Fallback for SSR and pre-mount client: render what server would render for non-mobile.
+        // On the server, isMobile from useIsMobile() is false initially.
+        <div className="w-[52px]"></div>
+      )}
       
       <div className="relative flex-1 md:grow-0">
         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
