@@ -10,10 +10,11 @@ import { useFormState, useFormStatus } from "react-dom";
 import { generateSummaryAction } from "./actions";
 import { useToast } from "@/hooks/use-toast";
 
-const exampleMatchData = {
+// Base structure for example data, date will be filled dynamically
+const exampleMatchDataBase = {
   game: "CS:GO",
   map: "Dust II",
-  date: new Date().toISOString(),
+  // date: will be set dynamically by generateExampleJson
   durationMinutes: 45,
   teams: {
     teamA: {
@@ -63,8 +64,25 @@ function SubmitButton() {
 export default function MatchSummaryPage() {
   const initialState = { summary: undefined, error: undefined, inputError: undefined };
   const [state, formAction] = useFormState(generateSummaryAction, initialState);
-  const [matchData, setMatchData] = React.useState(JSON.stringify(exampleMatchData, null, 2));
+  // Initialize with a placeholder or empty string to avoid mismatch
+  const [matchData, setMatchData] = React.useState<string>("Loading example data..."); 
   const { toast } = useToast();
+
+  const generateExampleJsonWithDynamicDate = React.useCallback(() => {
+    return JSON.stringify(
+      {
+        ...exampleMatchDataBase,
+        date: new Date().toISOString(), // Dynamic date generated on client
+      },
+      null,
+      2
+    );
+  }, []);
+
+  React.useEffect(() => {
+    // Set initial example data on client mount
+    setMatchData(generateExampleJsonWithDynamicDate());
+  }, [generateExampleJsonWithDynamicDate]);
 
   const handleCopySummary = () => {
     if (state.summary) {
@@ -74,8 +92,11 @@ export default function MatchSummaryPage() {
   };
   
   const handleUseExampleData = () => {
-    setMatchData(JSON.stringify(exampleMatchData, null, 2));
+    // Use current date when button is clicked
+    setMatchData(generateExampleJsonWithDynamicDate()); 
   };
+
+  const isLoadingExampleData = matchData === "Loading example data...";
 
   return (
     <div className="container mx-auto py-8">
@@ -111,6 +132,7 @@ export default function MatchSummaryPage() {
                 value={matchData}
                 onChange={(e) => setMatchData(e.target.value)}
                 className="font-mono text-xs bg-muted/30 focus:bg-card transition-colors"
+                disabled={isLoadingExampleData}
               />
               {state?.inputError && (
                 <p className="mt-2 text-sm text-destructive flex items-center">
@@ -162,3 +184,4 @@ export default function MatchSummaryPage() {
     </div>
   );
 }
+
